@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.codex
+venv/
+
+comparison_reports/
+fast_sync_reports/
+results/
+videos/
+testSamples/
+
+.DS_Store
