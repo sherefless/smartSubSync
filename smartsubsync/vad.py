@@ -2,15 +2,24 @@ from __future__ import annotations
 
 from typing import Any
 
+from smartsubsync.errors import SmartSubSyncError
 from smartsubsync.intervals import merge_intervals
 from smartsubsync.media import SAMPLE_RATE
 from smartsubsync.types import Interval
 
 
 def load_silero_model() -> Any:
-    from silero_vad import load_silero_vad
+    try:
+        from silero_vad import load_silero_vad
+    except ImportError as error:
+        raise SmartSubSyncError(
+            "silero-vad is not installed. Run the installer again or install dependencies."
+        ) from error
 
-    return load_silero_vad()
+    try:
+        return load_silero_vad()
+    except Exception as error:
+        raise SmartSubSyncError(f"Could not load Silero VAD model: {error}") from error
 
 
 def detect_silero_speech(
@@ -24,8 +33,13 @@ def detect_silero_speech(
     if not audio:
         return []
 
-    import torch
-    from silero_vad import get_speech_timestamps
+    try:
+        import torch
+        from silero_vad import get_speech_timestamps
+    except ImportError as error:
+        raise SmartSubSyncError(
+            "Silero VAD dependencies are missing. Run the installer again."
+        ) from error
 
     audio_tensor = torch.tensor(audio, dtype=torch.float32)
     segments = get_speech_timestamps(

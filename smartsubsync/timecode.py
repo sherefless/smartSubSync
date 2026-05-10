@@ -4,12 +4,12 @@ import re
 
 
 TIMESTAMP_RE = re.compile(
-    r"(?P<hours>\d{2}):(?P<minutes>\d{2}):(?P<seconds>\d{2}),(?P<milliseconds>\d{3})"
+    r"(?P<hours>\d{2,}):(?P<minutes>\d{2}):(?P<seconds>\d{2})[,.](?P<milliseconds>\d{3})"
 )
 
 
 def parse_timestamp(value: str) -> float:
-    match = TIMESTAMP_RE.fullmatch(value.strip())
+    match = TIMESTAMP_RE.search(value.strip())
     if not match:
         raise ValueError(f"Invalid timestamp: {value}")
 

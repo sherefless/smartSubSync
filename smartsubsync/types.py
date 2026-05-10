@@ -25,6 +25,7 @@ class SyncResult:
     overlap_improvement_percent: float
     reliable: bool
     retry_used: bool
+    already_synced: bool
     sampled_audio_seconds: float
     window_count: int
     elapsed_seconds: float

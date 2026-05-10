@@ -13,16 +13,15 @@ authors = [
   { name = "smartSubSync contributors" }
 ]
 
-[tool.setuptools]
-py-modules = ["smartsubsync_cli"]
-
 [tool.setuptools.packages.find]
 include = ["smartsubsync*"]
 
 [project.optional-dependencies]
 silero = [
   "torch",
-  "torchaudio",
   "silero-vad",
   "numpy",
 ]
+
+[project.scripts]
+smartsubsync = "smartsubsync.cli:main"

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Callable
 
 from smartsubsync.alignment import compute_metrics, find_best_offset
+from smartsubsync.errors import SmartSubSyncError
 from smartsubsync.intervals import merge_intervals
 from smartsubsync.media import SAMPLE_RATE, extract_audio_window, probe_duration
 from smartsubsync.subtitles import parse_srt
@@ -24,6 +25,7 @@ DEFAULT_MIN_SPEECH_MS = 120.0
 DEFAULT_MIN_SILENCE_MS = 180.0
 DEFAULT_MIN_OVERLAP_PERCENT = 45.0
 DEFAULT_MIN_IMPROVEMENT_PERCENT = 8.0
+DEFAULT_ALREADY_SYNCED_OVERLAP_PERCENT = 65.0
 
 RETRY_WINDOW_COUNT = 8
 RETRY_WINDOW_DURATION = 90.0
@@ -147,6 +149,7 @@ def estimate_subtitle_sync_once(
     min_silence_ms: float,
     min_overlap_percent: float,
     min_improvement_percent: float,
+    already_synced_overlap_percent: float,
     retry_used: bool = False,
     progress_callback: ProgressCallback | None = None,
 ) -> SyncResult:
@@ -201,7 +204,31 @@ def estimate_subtitle_sync_once(
         ),
     )
     if not vad_intervals:
-        raise RuntimeError("No speech intervals detected in sampled windows.")
+        raise SmartSubSyncError("No speech detected in sampled windows.")
+
+    if progress_callback is not None:
+        progress_callback(86.0, f"{attempt_prefix}checking current sync")
+    zero_started_at = time.perf_counter()
+    zero = compute_metrics(vad_intervals, subtitle_intervals, windows, 0.0)
+    timings["zero_metrics"] = time.perf_counter() - zero_started_at
+
+    if zero.overlap_percent >= already_synced_overlap_percent:
+        elapsed = time.perf_counter() - started_at
+        timings["search_offset"] = 0.0
+        timings["total"] = elapsed
+        return SyncResult(
+            offset_seconds=0.0,
+            best_overlap_percent=zero.overlap_percent,
+            zero_overlap_percent=zero.overlap_percent,
+            overlap_improvement_percent=0.0,
+            reliable=True,
+            retry_used=retry_used,
+            already_synced=True,
+            sampled_audio_seconds=sum(window.duration for window in windows),
+            window_count=len(windows),
+            elapsed_seconds=elapsed,
+            timings=timings,
+        )
 
     if progress_callback is not None:
         progress_callback(88.0, f"{attempt_prefix}searching best delay")
@@ -216,11 +243,6 @@ def estimate_subtitle_sync_once(
     )
     timings["search_offset"] = time.perf_counter() - search_started_at
 
-    if progress_callback is not None:
-        progress_callback(96.0, f"{attempt_prefix}checking confidence")
-    zero_started_at = time.perf_counter()
-    zero = compute_metrics(vad_intervals, subtitle_intervals, windows, 0.0)
-    timings["zero_metrics"] = time.perf_counter() - zero_started_at
     elapsed = time.perf_counter() - started_at
     timings["total"] = elapsed
     improvement = best.overlap_percent - zero.overlap_percent
@@ -237,6 +259,7 @@ def estimate_subtitle_sync_once(
             min_improvement_percent=min_improvement_percent,
         ),
         retry_used=retry_used,
+        already_synced=False,
         sampled_audio_seconds=sum(window.duration for window in windows),
         window_count=len(windows),
         elapsed_seconds=elapsed,
@@ -258,6 +281,7 @@ def estimate_subtitle_sync(
     min_silence_ms: float = DEFAULT_MIN_SILENCE_MS,
     min_overlap_percent: float = DEFAULT_MIN_OVERLAP_PERCENT,
     min_improvement_percent: float = DEFAULT_MIN_IMPROVEMENT_PERCENT,
+    already_synced_overlap_percent: float = DEFAULT_ALREADY_SYNCED_OVERLAP_PERCENT,
     auto_retry: bool = True,
     progress_callback: ProgressCallback | None = None,
 ) -> SyncResult:
@@ -275,6 +299,7 @@ def estimate_subtitle_sync(
         min_silence_ms=min_silence_ms,
         min_overlap_percent=min_overlap_percent,
         min_improvement_percent=min_improvement_percent,
+        already_synced_overlap_percent=already_synced_overlap_percent,
         progress_callback=progress_callback,
     )
 
@@ -308,6 +333,7 @@ def estimate_subtitle_sync(
         min_silence_ms=min_silence_ms,
         min_overlap_percent=min_overlap_percent,
         min_improvement_percent=min_improvement_percent,
+        already_synced_overlap_percent=already_synced_overlap_percent,
         retry_used=True,
         progress_callback=progress_callback,
     )

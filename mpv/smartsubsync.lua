@@ -4,8 +4,7 @@ local utils = require "mp.utils"
 local options = require "mp.options"
 
 local opts = {
-    python = "python3",
-    helper_path = "",
+    command = "smartsubsync",
     auto_sync = true,
     apply_delay = true,
     window_count = 6,
@@ -18,6 +17,7 @@ local opts = {
     min_silence_ms = 180,
     min_overlap_percent = 45,
     min_improvement_percent = 8,
+    already_synced_overlap_percent = 65,
     auto_retry = true,
 }
 
@@ -29,21 +29,6 @@ local pending_timer = nil
 local progress_timer = nil
 local progress_path = nil
 local running = false
-
-local function script_dir()
-    local path = debug.getinfo(1, "S").source
-    if path:sub(1, 1) == "@" then
-        path = path:sub(2)
-    end
-    return utils.split_path(path)
-end
-
-local function default_helper_path()
-    if opts.helper_path ~= "" then
-        return opts.helper_path
-    end
-    return utils.join_path(utils.join_path(script_dir(), ".."), "smartsubsync_cli.py")
-end
 
 local function is_absolute_path(path)
     if not path or path == "" then
@@ -185,8 +170,7 @@ end
 
 local function build_args(video_path, subtitle_path, progress_file)
     local args = {
-        opts.python,
-        default_helper_path(),
+        opts.command,
         "--json",
         "--progress-file", progress_file,
         "--window-count", tostring(opts.window_count),
@@ -199,11 +183,12 @@ local function build_args(video_path, subtitle_path, progress_file)
         "--min-silence-ms", tostring(opts.min_silence_ms),
         "--min-overlap-percent", tostring(opts.min_overlap_percent),
         "--min-improvement-percent", tostring(opts.min_improvement_percent),
+        "--already-synced-overlap-percent", tostring(opts.already_synced_overlap_percent),
         video_path,
         subtitle_path,
     }
     if not opts.auto_retry then
-        table.insert(args, 4, "--no-auto-retry")
+        table.insert(args, 3, "--no-auto-retry")
     end
     return args
 end
@@ -235,6 +220,14 @@ local function apply_result(result)
     local overlap = tonumber(payload.best_overlap_percent) or 0
     local improvement = tonumber(payload.overlap_improvement_percent) or 0
     local elapsed = tonumber(payload.elapsed_seconds) or 0
+    if payload.already_synced then
+        mp.osd_message(
+            string.format("smartSubSync: already synced, overlap %.2f%%, %.2fs", overlap, elapsed),
+            6
+        )
+        return
+    end
+
     if payload.reliable == false then
         mp.osd_message(
             string.format(
@@ -305,6 +298,7 @@ local function run_sync()
 
             local status = result and result.status
             if not success or status ~= 0 then
+                last_sync_key = nil
                 local detail = error
                     or (result and result.stderr)
                     or (result and result.error_string)
@@ -334,4 +328,3 @@ end
 
 mp.observe_property("sid", "native", schedule_sync)
 mp.observe_property("track-list", "native", schedule_sync)
-mp.add_key_binding("ctrl+s", "smartsubsync-run", run_sync)

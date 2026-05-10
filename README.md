@@ -14,6 +14,7 @@ with subtitle timing intervals, then applies the best `sub-delay` value in mpv.
 - Uses Silero VAD as the speech detection engine.
 - Samples only selected audio windows instead of processing the whole video.
 - Keeps user-tunable settings in `smartsubsync.conf`.
+- Leaves already-synced subtitles unchanged.
 - Refuses to apply low-confidence sync results.
 - Retries once with a larger sample when confidence is low.
 
@@ -22,7 +23,7 @@ with subtitle timing intervals, then applies the best `sub-delay` value in mpv.
 - Python `3.10+`
 - mpv
 - ffmpeg and ffprobe
-- Python packages: `torch`, `torchaudio`, `silero-vad`, `numpy`
+- Python packages: `torch`, `silero-vad`, `numpy`
 
 ## Install On Linux
 
@@ -56,7 +57,19 @@ py install.py
 ```
 
 The installer creates `.venv`, installs Python dependencies, copies the mpv Lua
-script, and writes `smartsubsync.conf` with the correct absolute paths.
+script, and writes `smartsubsync.conf` with the correct command path.
+
+Check your installation:
+
+```bash
+.venv/bin/smartsubsync doctor
+```
+
+On Windows, use:
+
+```powershell
+.\.venv\Scripts\smartsubsync.exe doctor
+```
 
 ## Usage
 
@@ -64,15 +77,10 @@ Open a video in mpv, then drag an external `.srt` subtitle onto the player.
 `smartSubSync` starts automatically and shows progress in mpv's on-screen
 display, for example `smartSubSync: 42% - detecting speech window 3/6`.
 
-You can also run sync manually with:
-
-```text
-Ctrl+s
-```
-
-If the match is reliable, `smartSubSync` applies `sub-delay` automatically. If
-confidence is low after retrying, it leaves the current subtitle delay unchanged
-and shows a warning.
+If the subtitle already matches the video, `smartSubSync` leaves `sub-delay`
+unchanged and shows `already synced`. If the match is reliable after analysis,
+it applies `sub-delay` automatically. If confidence is low after retrying, it
+leaves the current subtitle delay unchanged and shows a warning.
 
 ## Settings
 
@@ -83,8 +91,8 @@ Linux:   ~/.config/mpv/script-opts/smartsubsync.conf
 Windows: %APPDATA%\mpv\script-opts\smartsubsync.conf
 ```
 
-The installer writes `python=` and `helper_path=` automatically. You usually
-only need to edit the tuning values below.
+The installer writes `command=` automatically. You usually only need to edit the
+tuning values below.
 
 Recommended default:
 
@@ -121,31 +129,39 @@ Important options:
 - `auto_retry`: retry once with a larger sample if confidence is low.
 - `min_overlap_percent`: minimum overlap required before applying the delay.
 - `min_improvement_percent`: required improvement over zero-offset alignment.
+- `already_synced_overlap_percent`: if zero-offset overlap is already this good,
+  no delay is applied.
 
 ## CLI
 
 You can test the sync helper without mpv:
 
 ```bash
-python3 smartsubsync_cli.py "/path/to/video.mkv" "/path/to/subtitle.srt"
+.venv/bin/smartsubsync "/path/to/video.mkv" "/path/to/subtitle.srt"
 ```
 
 Print timing breakdown for debugging:
 
 ```bash
-python3 smartsubsync_cli.py --timings "/path/to/video.mkv" "/path/to/subtitle.srt"
+.venv/bin/smartsubsync --timings "/path/to/video.mkv" "/path/to/subtitle.srt"
 ```
 
 Machine-readable output used by mpv:
 
 ```bash
-python3 smartsubsync_cli.py --json "/path/to/video.mkv" "/path/to/subtitle.srt"
+.venv/bin/smartsubsync --json "/path/to/video.mkv" "/path/to/subtitle.srt"
 ```
 
 ## Troubleshooting
 
 If mpv shows `smartSubSync failed`, run the CLI command above directly in a
 terminal. Python traceback messages are easier to read there.
+
+Run a full installation check:
+
+```bash
+.venv/bin/smartsubsync doctor
+```
 
 Common fixes:
 
@@ -156,7 +172,7 @@ Common fixes:
   mpv's `scripts` directory.
 - Low-confidence warning: try larger `window_count`, `window_duration`, or
   `search_range` values in `smartsubsync.conf`.
-- Wrong Python is used: set the absolute `python=` path in `smartsubsync.conf`.
+- Wrong command is used: rerun `python3 install.py --skip-dependencies`.
 
 ## Development
 
