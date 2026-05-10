@@ -1,116 +1,116 @@
 # smartSubSync
 
-`smartSubSync` is a small CLI tool that estimates subtitle offset for a video file by:
+`smartSubSync` is an mpv subtitle synchronization helper.
 
-- extracting short `16 kHz` mono audio windows with `ffmpeg`
-- running `silero-vad` on those sampled windows
-- comparing VAD speech activity against subtitle timing intervals
-- reporting the best estimated subtitle shift
+When an external subtitle is selected or added in mpv, the Lua script calls a Python helper. The helper samples short `16 kHz` mono audio windows with `ffmpeg`, runs Silero VAD, compares speech activity with SRT timing intervals, and returns the best subtitle delay. The Lua script then applies that value to mpv's `sub-delay`.
 
-The current implementation is intentionally CLI-only. It prints sync metrics to stdout and does not generate HTML reports.
-
-## Requirements
-
-- Python `>=3.14`
-- `ffmpeg`
-- `ffprobe`
-
-Python dependencies:
-
-- `torch`
-- `torchaudio`
-- `silero-vad`
-
-## Installation
-
-Create a virtual environment and install the dependencies you need for the CLI:
-
-```bash
-python -m venv venv
-venv/bin/python -m pip install torch torchaudio silero-vad
-```
-
-Make sure `ffmpeg` and `ffprobe` are available on your system `PATH`.
-
-## Usage
-
-Basic usage:
-
-```bash
-venv/bin/python fast_sync.py "/path/to/video.mkv" "/path/to/subtitles.srt"
-```
-
-Example:
-
-```bash
-venv/bin/python fast_sync.py \
-  "videos/Black Sails (2014) - S01E01 - I. (1080p BluRay x265 RCVR).mkv" \
-  "subtitles/Black.Sails.S01E01.720p.HDTV.x264-NTb.srt"
-```
-
-Useful options:
-
-```bash
---window-count 6
---window-duration 90
---search-range 180
---coarse-step 0.5
---fine-step 0.1
---ultra-step 0.02
---threshold 0.5
-```
-
-## Output
-
-The CLI prints:
-
-- input video path
-- input subtitle path
-- number of sampled windows
-- total sampled audio duration
-- overlap at zero offset
-- best detected offset
-- best overlap score
-- total elapsed time
-
-Example output:
+## Layout
 
 ```text
-Video: videos/example.mkv
-Subtitle: subtitles/example.srt
-Sample windows: 6
-Sampled audio total: 00:09:00,000
-Zero-offset overlap: 31.20%
-Best offset: +7.42s (00:00:07,420)
-Best overlap: 58.14%
-Elapsed: 00:00:03,114
-```
-
-## Project Layout
-
-```text
-fast_sync.py
-fast_sync_lib/
-  cli.py
+mpv/
+  smartsubsync.lua
+  script-opts/
+    smartsubsync.conf
+smartsubsync/
   alignment.py
   intervals.py
   media.py
   subtitles.py
+  sync.py
   timecode.py
   types.py
+  vad.py
+smartsubsync_cli.py
 tests/
+videos/
+subtitles/
+```
+
+`videos/` and `subtitles/` are local sample data directories. They are not required by the mpv script.
+
+## Requirements
+
+- mpv
+- Python 3.10+
+- ffmpeg
+- ffprobe
+- torch
+- torchaudio
+- silero-vad
+- numpy
+
+Create the project virtual environment:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+.venv/bin/python -m pip install silero-vad numpy
+```
+
+## CLI Usage
+
+```bash
+python3 smartsubsync_cli.py "/path/to/video.mkv" "/path/to/subtitle.srt"
+```
+
+Machine-readable output for mpv:
+
+```bash
+python3 smartsubsync_cli.py --json "/path/to/video.mkv" "/path/to/subtitle.srt"
+```
+
+Useful tuning options:
+
+```bash
+--window-count 3
+--window-duration 30
+--search-range 60
+--threshold 0.5
+```
+
+## mpv Setup
+
+Copy or symlink the Lua script into your mpv scripts directory:
+
+```bash
+mkdir -p ~/.config/mpv/scripts
+ln -sf /home/shrefsiz/Projects/vad_test/mpv/smartsubsync.lua ~/.config/mpv/scripts/smartsubsync.lua
+```
+
+If the Python helper is not next to the repository layout expected by the script, set `helper_path`:
+
+```bash
+mkdir -p ~/.config/mpv/script-opts
+cp /home/shrefsiz/Projects/vad_test/mpv/script-opts/smartsubsync.conf ~/.config/mpv/script-opts/smartsubsync.conf
+```
+
+Then edit:
+
+```text
+helper_path=/home/shrefsiz/Projects/vad_test/smartsubsync_cli.py
+```
+
+While a video is open in mpv, adding/selecting an external subtitle triggers sync automatically. You can also run it manually with:
+
+```text
+Ctrl+s
 ```
 
 ## Development
 
-Run the stdlib test suite:
+Run tests:
 
 ```bash
-venv/bin/python -m unittest discover -s tests -p "test_*.py"
+python3 -m unittest discover -s tests -p "test_*.py"
 ```
 
-Syntax check:
+Run a quick local smoke test:
 
 ```bash
-venv/bin/python -m py_compile fast_sync.py fast_sync_lib/*.py tests/*.py
+python3 smartsubsync_cli.py \
+  "videos/Black Sails (2014) - S01E01 - I. (1080p BluRay x265 RCVR).mkv" \
+  "subtitles/Black.Sails.S01E01.720p.HDTV.x264-NTb.srt" \
+  --window-count 2 \
+  --window-duration 30 \
+  --search-range 30
 ```

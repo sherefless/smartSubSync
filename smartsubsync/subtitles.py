@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fast_sync_lib.intervals import merge_intervals
-from fast_sync_lib.timecode import parse_timestamp
-from fast_sync_lib.types import Interval
+from smartsubsync.intervals import merge_intervals
+from smartsubsync.timecode import parse_timestamp
+from smartsubsync.types import Interval
 
 
 def read_text_with_fallbacks(path: Path) -> str:

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from fast_sync_lib.subtitles import parse_srt
+from smartsubsync.subtitles import parse_srt
 
 
 class SubtitleTests(unittest.TestCase):

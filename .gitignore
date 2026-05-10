@@ -3,13 +3,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-.codex
-venv/
+.venv/
 
-comparison_reports/
-fast_sync_reports/
-results/
 videos/
-testSamples/
-
-.DS_Store
+subtitles/

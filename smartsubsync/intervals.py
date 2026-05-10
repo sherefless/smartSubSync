@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fast_sync_lib.types import Interval, Window
+from smartsubsync.types import Interval, Window
 
 
 def merge_intervals(intervals: list[Interval]) -> list[Interval]:
@@ -59,6 +59,7 @@ def overlap_duration(left: list[Interval], right: list[Interval]) -> float:
     total = 0.0
     left_index = 0
     right_index = 0
+
     while left_index < len(left) and right_index < len(right):
         start = max(left[left_index][0], right[right_index][0])
         end = min(left[left_index][1], right[right_index][1])
@@ -69,21 +70,5 @@ def overlap_duration(left: list[Interval], right: list[Interval]) -> float:
             left_index += 1
         else:
             right_index += 1
+
     return total
-
-
-def overlap_intervals(left: list[Interval], right: list[Interval]) -> list[Interval]:
-    overlaps: list[Interval] = []
-    left_index = 0
-    right_index = 0
-    while left_index < len(left) and right_index < len(right):
-        start = max(left[left_index][0], right[right_index][0])
-        end = min(left[left_index][1], right[right_index][1])
-        if end > start:
-            overlaps.append((start, end))
-
-        if left[left_index][1] <= right[right_index][1]:
-            left_index += 1
-        else:
-            right_index += 1
-    return overlaps

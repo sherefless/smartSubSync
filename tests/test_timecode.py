@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from fast_sync_lib.timecode import format_timestamp, parse_timestamp
+from smartsubsync.timecode import format_timestamp, parse_timestamp
 
 
 class TimecodeTests(unittest.TestCase):

@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import unittest
 
-from fast_sync_lib.intervals import (
+from smartsubsync.intervals import (
     clip_intervals_to_windows,
     merge_intervals,
     overlap_duration,
     shift_intervals,
 )
-from fast_sync_lib.types import Window
+from smartsubsync.types import Window
 
 
 class IntervalTests(unittest.TestCase):
@@ -17,8 +17,7 @@ class IntervalTests(unittest.TestCase):
         self.assertEqual(merged, [(0.0, 2.0), (3.0, 4.0)])
 
     def test_shift_intervals(self) -> None:
-        shifted = shift_intervals([(1.0, 2.0)], 3.5)
-        self.assertEqual(shifted, [(4.5, 5.5)])
+        self.assertEqual(shift_intervals([(1.0, 2.0)], 3.5), [(4.5, 5.5)])
 
     def test_clip_intervals_to_windows(self) -> None:
         windows = [Window(start=10.0, end=20.0, center=15.0)]
