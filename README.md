@@ -32,28 +32,10 @@ Install system tools with your package manager. For example:
 sudo apt install mpv ffmpeg python3 python3-venv
 ```
 
-Create a virtual environment inside the project:
+Run the installer inside the project:
 
 ```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install --upgrade pip
-.venv/bin/python -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-.venv/bin/python -m pip install silero-vad numpy
-```
-
-Install the mpv script:
-
-```bash
-mkdir -p ~/.config/mpv/scripts ~/.config/mpv/script-opts
-ln -sf "$PWD/mpv/smartsubsync.lua" ~/.config/mpv/scripts/smartsubsync.lua
-cp mpv/script-opts/smartsubsync.conf ~/.config/mpv/script-opts/smartsubsync.conf
-```
-
-Edit `~/.config/mpv/script-opts/smartsubsync.conf` and set these paths:
-
-```text
-python=/absolute/path/to/smartSubSync/.venv/bin/python
-helper_path=/absolute/path/to/smartSubSync/smartsubsync_cli.py
+python3 install.py
 ```
 
 ## Install On Windows
@@ -67,30 +49,14 @@ Install:
 Make sure `ffmpeg.exe`, `ffprobe.exe`, and `mpv.exe` are available from your
 terminal `PATH`.
 
-Create a virtual environment from PowerShell:
+Run the installer from PowerShell:
 
 ```powershell
-py -3 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-.\.venv\Scripts\python.exe -m pip install silero-vad numpy
+py install.py
 ```
 
-Create mpv config directories:
-
-```powershell
-mkdir $env:APPDATA\mpv\scripts -Force
-mkdir $env:APPDATA\mpv\script-opts -Force
-copy .\mpv\smartsubsync.lua $env:APPDATA\mpv\scripts\smartsubsync.lua
-copy .\mpv\script-opts\smartsubsync.conf $env:APPDATA\mpv\script-opts\smartsubsync.conf
-```
-
-Edit `%APPDATA%\mpv\script-opts\smartsubsync.conf` and set these paths:
-
-```text
-python=C:\absolute\path\to\smartSubSync\.venv\Scripts\python.exe
-helper_path=C:\absolute\path\to\smartSubSync\smartsubsync_cli.py
-```
+The installer creates `.venv`, installs Python dependencies, copies the mpv Lua
+script, and writes `smartsubsync.conf` with the correct absolute paths.
 
 ## Usage
 
@@ -116,6 +82,9 @@ User settings live here:
 Linux:   ~/.config/mpv/script-opts/smartsubsync.conf
 Windows: %APPDATA%\mpv\script-opts\smartsubsync.conf
 ```
+
+The installer writes `python=` and `helper_path=` automatically. You usually
+only need to edit the tuning values below.
 
 Recommended default:
 
@@ -201,4 +170,10 @@ Validate the Lua script:
 
 ```bash
 luac -p mpv/smartsubsync.lua
+```
+
+Install mpv files without reinstalling Python dependencies:
+
+```bash
+python3 install.py --skip-dependencies
 ```
