@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from smartsubsync.alignment import compute_metrics, find_best_offset
+from smartsubsync.sync import is_reliable_match
 from smartsubsync.types import Window
 
 
@@ -26,6 +27,24 @@ class AlignmentTests(unittest.TestCase):
             fine_step=0.1,
         )
         self.assertAlmostEqual(best.offset_seconds, 2.0, places=1)
+
+    def test_reliable_match_requires_overlap_and_improvement(self) -> None:
+        self.assertTrue(
+            is_reliable_match(
+                best_overlap_percent=55.0,
+                zero_overlap_percent=40.0,
+                min_overlap_percent=45.0,
+                min_improvement_percent=8.0,
+            )
+        )
+        self.assertFalse(
+            is_reliable_match(
+                best_overlap_percent=55.0,
+                zero_overlap_percent=51.0,
+                min_overlap_percent=45.0,
+                min_improvement_percent=8.0,
+            )
+        )
 
 
 if __name__ == "__main__":

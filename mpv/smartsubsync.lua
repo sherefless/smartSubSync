@@ -8,14 +8,17 @@ local opts = {
     helper_path = "",
     auto_sync = true,
     apply_delay = true,
-    window_count = 3,
-    window_duration = 30,
-    search_range = 60,
+    window_count = 6,
+    window_duration = 60,
+    search_range = 120,
     coarse_step = 0.5,
-    fine_step = 0.05,
+    fine_step = 0.02,
     threshold = 0.5,
     min_speech_ms = 120,
     min_silence_ms = 180,
+    min_overlap_percent = 45,
+    min_improvement_percent = 8,
+    auto_retry = true,
 }
 
 options.read_options(opts, "smartsubsync")
@@ -64,11 +67,19 @@ local function file_uri_to_path(path)
     end
 
     if path:sub(1, 7) == "file://" then
-        return decode_uri_component(path:sub(8))
+        local decoded = decode_uri_component(path:sub(8))
+        if decoded:match("^/%a:") then
+            return decoded:sub(2)
+        end
+        return decoded
     end
 
     if path:sub(1, 5) == "file:" then
-        return decode_uri_component(path:sub(6))
+        local decoded = decode_uri_component(path:sub(6))
+        if decoded:match("^/%a:") then
+            return decoded:sub(2)
+        end
+        return decoded
     end
 
     return path
@@ -109,7 +120,7 @@ local function selected_external_subtitle()
 end
 
 local function build_args(video_path, subtitle_path)
-    return {
+    local args = {
         opts.python,
         default_helper_path(),
         "--json",
@@ -121,9 +132,15 @@ local function build_args(video_path, subtitle_path)
         "--threshold", tostring(opts.threshold),
         "--min-speech-ms", tostring(opts.min_speech_ms),
         "--min-silence-ms", tostring(opts.min_silence_ms),
+        "--min-overlap-percent", tostring(opts.min_overlap_percent),
+        "--min-improvement-percent", tostring(opts.min_improvement_percent),
         video_path,
         subtitle_path,
     }
+    if not opts.auto_retry then
+        table.insert(args, 4, "--no-auto-retry")
+    end
+    return args
 end
 
 local function apply_result(result)
@@ -150,14 +167,35 @@ local function apply_result(result)
         return
     end
 
+    local overlap = tonumber(payload.best_overlap_percent) or 0
+    local improvement = tonumber(payload.overlap_improvement_percent) or 0
+    local elapsed = tonumber(payload.elapsed_seconds) or 0
+    if payload.reliable == false then
+        mp.osd_message(
+            string.format(
+                "smartSubSync: confidence too low, not applied (overlap %.2f%%, gain %.2f%%)",
+                overlap,
+                improvement
+            ),
+            8
+        )
+        msg.warn("Low confidence sync result: " .. (result.stdout or ""))
+        return
+    end
+
     if opts.apply_delay then
         mp.set_property_number("sub-delay", offset)
     end
 
-    local overlap = tonumber(payload.best_overlap_percent) or 0
-    local elapsed = tonumber(payload.elapsed_seconds) or 0
+    local retry_note = payload.retry_used and ", retry" or ""
     mp.osd_message(
-        string.format("smartSubSync: %+0.3fs, overlap %.2f%%, %.2fs", offset, overlap, elapsed),
+        string.format(
+            "smartSubSync: %+0.3fs, overlap %.2f%%%s, %.2fs",
+            offset,
+            overlap,
+            retry_note,
+            elapsed
+        ),
         6
     )
 end

@@ -11,6 +11,22 @@ from smartsubsync.types import Interval, SyncResult, Window
 from smartsubsync.vad import detect_silero_speech, load_silero_model
 
 
+DEFAULT_WINDOW_COUNT = 6
+DEFAULT_WINDOW_DURATION = 60.0
+DEFAULT_SEARCH_RANGE = 120.0
+DEFAULT_COARSE_STEP = 0.5
+DEFAULT_FINE_STEP = 0.02
+DEFAULT_THRESHOLD = 0.5
+DEFAULT_MIN_SPEECH_MS = 120.0
+DEFAULT_MIN_SILENCE_MS = 180.0
+DEFAULT_MIN_OVERLAP_PERCENT = 45.0
+DEFAULT_MIN_IMPROVEMENT_PERCENT = 8.0
+
+RETRY_WINDOW_COUNT = 8
+RETRY_WINDOW_DURATION = 90.0
+RETRY_SEARCH_RANGE = 180.0
+
+
 def choose_window_centers(
     subtitle_intervals: list[Interval],
     *,
@@ -88,18 +104,34 @@ def collect_speech_intervals(
     return merge_intervals(speech_intervals), windows
 
 
-def estimate_subtitle_sync(
+def is_reliable_match(
+    *,
+    best_overlap_percent: float,
+    zero_overlap_percent: float,
+    min_overlap_percent: float,
+    min_improvement_percent: float,
+) -> bool:
+    return (
+        best_overlap_percent >= min_overlap_percent
+        and best_overlap_percent - zero_overlap_percent >= min_improvement_percent
+    )
+
+
+def estimate_subtitle_sync_once(
     video_path: Path,
     subtitle_path: Path,
     *,
-    window_count: int = 3,
-    window_duration: float = 30.0,
-    search_range: float = 60.0,
-    coarse_step: float = 0.5,
-    fine_step: float = 0.05,
-    threshold: float = 0.5,
-    min_speech_ms: float = 120.0,
-    min_silence_ms: float = 180.0,
+    window_count: int,
+    window_duration: float,
+    search_range: float,
+    coarse_step: float,
+    fine_step: float,
+    threshold: float,
+    min_speech_ms: float,
+    min_silence_ms: float,
+    min_overlap_percent: float,
+    min_improvement_percent: float,
+    retry_used: bool = False,
 ) -> SyncResult:
     started_at = time.perf_counter()
     timings: dict[str, float] = {}
@@ -154,13 +186,87 @@ def estimate_subtitle_sync(
     timings["zero_metrics"] = time.perf_counter() - zero_started_at
     elapsed = time.perf_counter() - started_at
     timings["total"] = elapsed
+    improvement = best.overlap_percent - zero.overlap_percent
 
     return SyncResult(
         offset_seconds=best.offset_seconds,
         best_overlap_percent=best.overlap_percent,
         zero_overlap_percent=zero.overlap_percent,
+        overlap_improvement_percent=improvement,
+        reliable=is_reliable_match(
+            best_overlap_percent=best.overlap_percent,
+            zero_overlap_percent=zero.overlap_percent,
+            min_overlap_percent=min_overlap_percent,
+            min_improvement_percent=min_improvement_percent,
+        ),
+        retry_used=retry_used,
         sampled_audio_seconds=sum(window.duration for window in windows),
         window_count=len(windows),
         elapsed_seconds=elapsed,
         timings=timings,
     )
+
+
+def estimate_subtitle_sync(
+    video_path: Path,
+    subtitle_path: Path,
+    *,
+    window_count: int = DEFAULT_WINDOW_COUNT,
+    window_duration: float = DEFAULT_WINDOW_DURATION,
+    search_range: float = DEFAULT_SEARCH_RANGE,
+    coarse_step: float = DEFAULT_COARSE_STEP,
+    fine_step: float = DEFAULT_FINE_STEP,
+    threshold: float = DEFAULT_THRESHOLD,
+    min_speech_ms: float = DEFAULT_MIN_SPEECH_MS,
+    min_silence_ms: float = DEFAULT_MIN_SILENCE_MS,
+    min_overlap_percent: float = DEFAULT_MIN_OVERLAP_PERCENT,
+    min_improvement_percent: float = DEFAULT_MIN_IMPROVEMENT_PERCENT,
+    auto_retry: bool = True,
+) -> SyncResult:
+    started_at = time.perf_counter()
+    result = estimate_subtitle_sync_once(
+        video_path,
+        subtitle_path,
+        window_count=window_count,
+        window_duration=window_duration,
+        search_range=search_range,
+        coarse_step=coarse_step,
+        fine_step=fine_step,
+        threshold=threshold,
+        min_speech_ms=min_speech_ms,
+        min_silence_ms=min_silence_ms,
+        min_overlap_percent=min_overlap_percent,
+        min_improvement_percent=min_improvement_percent,
+    )
+
+    should_retry = (
+        auto_retry
+        and not result.reliable
+        and (
+            window_count < RETRY_WINDOW_COUNT
+            or window_duration < RETRY_WINDOW_DURATION
+            or search_range < RETRY_SEARCH_RANGE
+        )
+    )
+    if not should_retry:
+        result.timings["wall_total"] = time.perf_counter() - started_at
+        return result
+
+    retry_result = estimate_subtitle_sync_once(
+        video_path,
+        subtitle_path,
+        window_count=max(window_count, RETRY_WINDOW_COUNT),
+        window_duration=max(window_duration, RETRY_WINDOW_DURATION),
+        search_range=max(search_range, RETRY_SEARCH_RANGE),
+        coarse_step=coarse_step,
+        fine_step=fine_step,
+        threshold=threshold,
+        min_speech_ms=min_speech_ms,
+        min_silence_ms=min_silence_ms,
+        min_overlap_percent=min_overlap_percent,
+        min_improvement_percent=min_improvement_percent,
+        retry_used=True,
+    )
+    retry_result.timings["first_attempt_total"] = result.elapsed_seconds
+    retry_result.timings["wall_total"] = time.perf_counter() - started_at
+    return retry_result
