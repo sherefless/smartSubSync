@@ -22,9 +22,12 @@ local opts = {
 }
 
 options.read_options(opts, "smartsubsync")
+math.randomseed(os.time())
 
 local last_sync_key = nil
 local pending_timer = nil
+local progress_timer = nil
+local progress_path = nil
 local running = false
 
 local function script_dir()
@@ -119,11 +122,73 @@ local function selected_external_subtitle()
     return nil, nil
 end
 
-local function build_args(video_path, subtitle_path)
+local function temp_progress_path()
+    local temp_dir = os.getenv("TMPDIR") or os.getenv("TEMP") or os.getenv("TMP") or "/tmp"
+    local name = string.format(
+        "smartsubsync-progress-%d-%d.json",
+        os.time(),
+        math.random(100000, 999999)
+    )
+    return utils.join_path(temp_dir, name)
+end
+
+local function read_text_file(path)
+    local file = io.open(path, "r")
+    if not file then
+        return nil
+    end
+    local content = file:read("*a")
+    file:close()
+    return content
+end
+
+local function show_progress()
+    if not progress_path then
+        return
+    end
+
+    local content = read_text_file(progress_path)
+    if not content or content == "" then
+        return
+    end
+
+    local payload = utils.parse_json(content)
+    if not payload then
+        return
+    end
+
+    local percent = tonumber(payload.percent) or 0
+    local message = payload.message or "analyzing"
+    local text = string.format("smartSubSync: %d%% - %s", percent, message)
+
+    mp.osd_message(text, 1.2)
+end
+
+local function start_progress_polling(path)
+    progress_path = path
+    if progress_timer then
+        progress_timer:kill()
+    end
+    progress_timer = mp.add_periodic_timer(0.7, show_progress)
+end
+
+local function stop_progress_polling()
+    if progress_timer then
+        progress_timer:kill()
+        progress_timer = nil
+    end
+    if progress_path then
+        os.remove(progress_path)
+        progress_path = nil
+    end
+end
+
+local function build_args(video_path, subtitle_path, progress_file)
     local args = {
         opts.python,
         default_helper_path(),
         "--json",
+        "--progress-file", progress_file,
         "--window-count", tostring(opts.window_count),
         "--window-duration", tostring(opts.window_duration),
         "--search-range", tostring(opts.search_range),
@@ -218,6 +283,8 @@ local function run_sync()
     last_sync_key = key
     running = true
 
+    local current_progress_path = temp_progress_path()
+    start_progress_polling(current_progress_path)
     mp.osd_message("smartSubSync: analyzing subtitle sync...", 3)
     mp.command_native_async(
         {
@@ -225,10 +292,11 @@ local function run_sync()
             playback_only = false,
             capture_stdout = true,
             capture_stderr = true,
-            args = build_args(video_path, subtitle_path),
+            args = build_args(video_path, subtitle_path, current_progress_path),
         },
         function(success, result, error)
             running = false
+            stop_progress_polling()
             if type(success) == "table" and result == nil then
                 result = success
                 success = result.error == nil

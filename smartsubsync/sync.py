@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from typing import Callable
 
 from smartsubsync.alignment import compute_metrics, find_best_offset
 from smartsubsync.intervals import merge_intervals
@@ -10,6 +11,8 @@ from smartsubsync.subtitles import parse_srt
 from smartsubsync.types import Interval, SyncResult, Window
 from smartsubsync.vad import detect_silero_speech, load_silero_model
 
+
+ProgressCallback = Callable[[float, str], None]
 
 DEFAULT_WINDOW_COUNT = 6
 DEFAULT_WINDOW_DURATION = 60.0
@@ -70,11 +73,19 @@ def collect_speech_intervals(
     min_speech_ms: float,
     min_silence_ms: float,
     timings: dict[str, float] | None = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> tuple[list[Interval], list[Window]]:
     speech_intervals: list[Interval] = []
     windows: list[Window] = []
 
-    for center in centers:
+    total_centers = len(centers)
+    for index, center in enumerate(centers, start=1):
+        progress_start = 15.0 + ((index - 1) / total_centers) * 70.0
+        progress_mid = 15.0 + ((index - 0.5) / total_centers) * 70.0
+        progress_end = 15.0 + (index / total_centers) * 70.0
+        if progress_callback is not None:
+            progress_callback(progress_start, f"extracting audio window {index}/{total_centers}")
+
         start_sec = max(0.0, center - window_duration / 2)
         audio_started_at = time.perf_counter()
         audio = extract_audio_window(video_path, start_sec, window_duration)
@@ -84,6 +95,9 @@ def collect_speech_intervals(
             )
         real_duration = len(audio) / SAMPLE_RATE
         windows.append(Window(start=start_sec, end=start_sec + real_duration, center=center))
+
+        if progress_callback is not None:
+            progress_callback(progress_mid, f"detecting speech window {index}/{total_centers}")
 
         vad_started_at = time.perf_counter()
         local_intervals = detect_silero_speech(
@@ -100,6 +114,8 @@ def collect_speech_intervals(
         speech_intervals.extend(
             (start_sec + start, start_sec + end) for start, end in local_intervals
         )
+        if progress_callback is not None:
+            progress_callback(progress_end, f"processed window {index}/{total_centers}")
 
     return merge_intervals(speech_intervals), windows
 
@@ -132,18 +148,26 @@ def estimate_subtitle_sync_once(
     min_overlap_percent: float,
     min_improvement_percent: float,
     retry_used: bool = False,
+    progress_callback: ProgressCallback | None = None,
 ) -> SyncResult:
     started_at = time.perf_counter()
     timings: dict[str, float] = {}
+    attempt_prefix = "retry: " if retry_used else ""
 
+    if progress_callback is not None:
+        progress_callback(1.0, f"{attempt_prefix}reading subtitle")
     parse_started_at = time.perf_counter()
     subtitle_intervals = parse_srt(subtitle_path)
     timings["parse_srt"] = time.perf_counter() - parse_started_at
 
+    if progress_callback is not None:
+        progress_callback(3.0, f"{attempt_prefix}probing video")
     probe_started_at = time.perf_counter()
     video_duration = probe_duration(video_path)
     timings["probe_duration"] = time.perf_counter() - probe_started_at
 
+    if progress_callback is not None:
+        progress_callback(5.0, f"{attempt_prefix}choosing sample windows")
     centers_started_at = time.perf_counter()
     centers = choose_window_centers(
         subtitle_intervals,
@@ -153,9 +177,13 @@ def estimate_subtitle_sync_once(
     )
     timings["choose_windows"] = time.perf_counter() - centers_started_at
 
+    if progress_callback is not None:
+        progress_callback(8.0, f"{attempt_prefix}loading Silero VAD")
     model_started_at = time.perf_counter()
     model = load_silero_model()
     timings["load_model"] = time.perf_counter() - model_started_at
+    if progress_callback is not None:
+        progress_callback(15.0, f"{attempt_prefix}analyzing speech")
 
     vad_intervals, windows = collect_speech_intervals(
         video_path,
@@ -166,10 +194,17 @@ def estimate_subtitle_sync_once(
         min_speech_ms=min_speech_ms,
         min_silence_ms=min_silence_ms,
         timings=timings,
+        progress_callback=(
+            (lambda percent, message: progress_callback(percent, attempt_prefix + message))
+            if progress_callback is not None
+            else None
+        ),
     )
     if not vad_intervals:
         raise RuntimeError("No speech intervals detected in sampled windows.")
 
+    if progress_callback is not None:
+        progress_callback(88.0, f"{attempt_prefix}searching best delay")
     search_started_at = time.perf_counter()
     best = find_best_offset(
         vad_intervals,
@@ -181,6 +216,8 @@ def estimate_subtitle_sync_once(
     )
     timings["search_offset"] = time.perf_counter() - search_started_at
 
+    if progress_callback is not None:
+        progress_callback(96.0, f"{attempt_prefix}checking confidence")
     zero_started_at = time.perf_counter()
     zero = compute_metrics(vad_intervals, subtitle_intervals, windows, 0.0)
     timings["zero_metrics"] = time.perf_counter() - zero_started_at
@@ -222,6 +259,7 @@ def estimate_subtitle_sync(
     min_overlap_percent: float = DEFAULT_MIN_OVERLAP_PERCENT,
     min_improvement_percent: float = DEFAULT_MIN_IMPROVEMENT_PERCENT,
     auto_retry: bool = True,
+    progress_callback: ProgressCallback | None = None,
 ) -> SyncResult:
     started_at = time.perf_counter()
     result = estimate_subtitle_sync_once(
@@ -237,6 +275,7 @@ def estimate_subtitle_sync(
         min_silence_ms=min_silence_ms,
         min_overlap_percent=min_overlap_percent,
         min_improvement_percent=min_improvement_percent,
+        progress_callback=progress_callback,
     )
 
     should_retry = (
@@ -250,8 +289,12 @@ def estimate_subtitle_sync(
     )
     if not should_retry:
         result.timings["wall_total"] = time.perf_counter() - started_at
+        if progress_callback is not None:
+            progress_callback(100.0, "done")
         return result
 
+    if progress_callback is not None:
+        progress_callback(0.0, "confidence low, retrying with larger sample")
     retry_result = estimate_subtitle_sync_once(
         video_path,
         subtitle_path,
@@ -266,7 +309,10 @@ def estimate_subtitle_sync(
         min_overlap_percent=min_overlap_percent,
         min_improvement_percent=min_improvement_percent,
         retry_used=True,
+        progress_callback=progress_callback,
     )
     retry_result.timings["first_attempt_total"] = result.elapsed_seconds
     retry_result.timings["wall_total"] = time.perf_counter() - started_at
+    if progress_callback is not None:
+        progress_callback(100.0, "done")
     return retry_result

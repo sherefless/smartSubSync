@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
+from typing import Callable
 
 from smartsubsync.sync import (
     DEFAULT_COARSE_STEP,
@@ -43,11 +45,36 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--no-auto-retry", action="store_true")
     parser.add_argument("--timings", action="store_true", help="Print timing breakdown.")
+    parser.add_argument(
+        "--progress-file",
+        help="Write progress updates as JSON for mpv's on-screen display.",
+    )
     return parser.parse_args()
+
+
+def make_progress_callback(path: Path | None) -> Callable[[float, str], None] | None:
+    if path is None:
+        return None
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.parent / f"{path.name}.tmp"
+
+    def write_progress(percent: float, message: str) -> None:
+        payload = {
+            "percent": max(0, min(100, round(percent))),
+            "message": message,
+        }
+        tmp_path.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
+        os.replace(tmp_path, path)
+
+    return write_progress
 
 
 def main() -> int:
     args = parse_args()
+    progress_callback = make_progress_callback(
+        Path(args.progress_file) if args.progress_file else None
+    )
     result = estimate_subtitle_sync(
         Path(args.video_file),
         Path(args.subtitle_file),
@@ -62,6 +89,7 @@ def main() -> int:
         min_overlap_percent=args.min_overlap_percent,
         min_improvement_percent=args.min_improvement_percent,
         auto_retry=not args.no_auto_retry,
+        progress_callback=progress_callback,
     )
 
     if args.json:

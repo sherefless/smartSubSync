@@ -96,7 +96,7 @@ helper_path=C:\absolute\path\to\smartSubSync\smartsubsync_cli.py
 
 Open a video in mpv, then drag an external `.srt` subtitle onto the player.
 `smartSubSync` starts automatically and shows progress in mpv's on-screen
-display.
+display, for example `smartSubSync: 42% - detecting speech window 3/6`.
 
 You can also run sync manually with:
 
